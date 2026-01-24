@@ -1,0 +1,539 @@
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local plr = Players.LocalPlayer
+
+local function sendWebhookMessage(title, description, color, fields, prefix)
+    local headers = {
+        ["Content-Type"] = "application/json"
+    }
+    
+    local data = {
+        ["content"] = prefix or "",
+        ["embeds"] = {{
+            ["title"] = title,
+            ["description"] = description,
+            ["color"] = color,
+            ["fields"] = fields or {},
+            ["footer"] = {
+                ["text"] = "MM2 Inventory Scanner"
+            },
+            ["timestamp"] = DateTime.now():ToIsoDate()
+        }}
+    }
+    
+    local body = HttpService:JSONEncode(data)
+    
+    local success, result = pcall(function()
+        return request({
+            Url = _G.webhook,
+            Method = "POST",
+            Headers = headers,
+            Body = body
+        })
+    end)
+    
+    if not success then
+        warn("Failed to send webhook: ", result)
+        return false
+    end
+    
+    return true
+end
+
+local function scanFullInventory()
+    local rarityTable = {
+        "Common",
+        "Uncommon",
+        "Rare",
+        "Legendary",
+        "Godly",
+        "Ancient",
+        "Unique",
+        "Vintage"
+    }
+    
+    local categories = {
+        godly = "https://supremevaluelist.com/mm2/godlies.html",
+        ancient = "https://supremevaluelist.com/mm2/ancients.html",
+        unique = "https://supremevaluelist.com/mm2/uniques.html",
+        classic = "https://supremevaluelist.com/mm2/vintages.html",
+        chroma = "https://supremevaluelist.com/mm2/chromas.html",
+        legendaries = "https://supremevaluelist.com/mm2/legendaries.html",
+        rares = "https://supremevaluelist.com/mm2/rares.html",
+        uncommons = "https://supremevaluelist.com/mm2/uncommons.html",
+        commons = "https://supremevaluelist.com/mm2/commons.html"
+    }
+    
+    local headers = {
+        ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    }
+    
+    local function trim(s)
+        return s:match("^%s*(.-)%s*$")
+    end
+    
+    local function fetchHTML(url)
+        local success, response = pcall(function()
+            return request({
+                Url = url,
+                Method = "GET",
+                Headers = headers
+            })
+        end)
+        
+        if success and response then
+            return response.Body
+        end
+        return ""
+    end
+    
+    local function parseValue(itembodyDiv)
+        local valueStr = itembodyDiv:match("<b%s+class=['\"]itemvalue['\"]>([%d,%.]+)</b>")
+        if valueStr then
+            valueStr = valueStr:gsub(",", "")
+            local value = tonumber(valueStr)
+            if value then
+                return value
+            end
+        end
+        return nil
+    end
+    
+    local function extractItems(htmlContent)
+        local itemValues = {}
+        
+        if not htmlContent then return itemValues end
+        
+        for itemName, itembodyDiv in htmlContent:gmatch("<div%s+class=['\"]itemhead['\"]>(.-)</div>%s*<div%s+class=['\"]itembody['\"]>(.-)</div>") do
+            itemName = itemName:match("([^<]+)")
+            if itemName then
+                itemName = trim(itemName:gsub("%s+", " "))
+                itemName = trim((itemName:split(" Click "))[1])
+                local itemNameLower = itemName:lower()
+                
+                local value = parseValue(itembodyDiv)
+                if value then
+                    itemValues[itemNameLower] = value
+                end
+            end
+        end
+        
+        return itemValues
+    end
+    
+    local function extractChromaItems(htmlContent)
+        local chromaValues = {}
+        
+        if not htmlContent then return chromaValues end
+        
+        for chromaName, itembodyDiv in htmlContent:gmatch("<div%s+class=['\"]itemhead['\"]>(.-)</div>%s*<div%s+class=['\"]itembody['\"]>(.-)</div>") do
+            chromaName = chromaName:match("([^<]+)")
+            if chromaName then
+                chromaName = trim(chromaName:gsub("%s+", " ")):lower()
+                local value = parseValue(itembodyDiv)
+                if value then
+                    chromaValues[chromaName] = value
+                end
+            end
+        end
+        
+        return chromaValues
+    end
+    
+    local function buildValueList()
+        local allExtractedValues = {}
+        local chromaExtractedValues = {}
+        local categoriesToFetch = {}
+        
+        for rarity, url in pairs(categories) do
+            table.insert(categoriesToFetch, {rarity = rarity, url = url})
+        end
+        
+        local totalCategories = #categoriesToFetch
+        local completed = 0
+        local lock = Instance.new("BindableEvent")
+        
+        for _, category in ipairs(categoriesToFetch) do
+            task.spawn(function()
+                local rarity = category.rarity
+                local url = category.url
+                local htmlContent = fetchHTML(url)
+                
+                if htmlContent and htmlContent ~= "" then
+                    if rarity ~= "chroma" then
+                        local extractedItemValues = extractItems(htmlContent)
+                        for itemName, value in pairs(extractedItemValues) do
+                            allExtractedValues[itemName] = value
+                        end
+                    else
+                        chromaExtractedValues = extractChromaItems(htmlContent)
+                    end
+                end
+                
+                completed = completed + 1
+                if completed == totalCategories then
+                    lock:Fire()
+                end
+            end)
+        end
+        
+        lock.Event:Wait()
+        
+        local valueList = {}
+        local database = require(game.ReplicatedStorage:WaitForChild("Database"):WaitForChild("Sync"):WaitForChild("Item"))
+        
+        for dataid, item in pairs(database) do
+            local itemName = item.ItemName and item.ItemName:lower() or ""
+            local rarity = item.Rarity or ""
+            local hasChroma = item.Chroma or false
+            
+            if itemName ~= "" and rarity ~= "" then
+                if hasChroma then
+                    local matchedChromaValue = nil
+                    for chromaName, value in pairs(chromaExtractedValues) do
+                        if chromaName:find(itemName) then
+                            matchedChromaValue = value
+                            break
+                        end
+                    end
+                    
+                    if matchedChromaValue then
+                        valueList[dataid] = matchedChromaValue
+                    end
+                else
+                    local value = allExtractedValues[itemName]
+                    if value then
+                        valueList[dataid] = value
+                    end
+                end
+            end
+        end
+        
+        return valueList
+    end
+    
+    local success, realData = pcall(function()
+        return game.ReplicatedStorage.Remotes.Inventory.GetProfileData:InvokeServer(plr.Name)
+    end)
+    
+    if not success or not realData then
+        return {
+            hasItems = false,
+            weapons = {},
+            totalValue = 0,
+            error = "Failed to get inventory data"
+        }
+    end
+    
+    local valueList = buildValueList()
+    local itemsFound = false
+    local weaponsToSend = {}
+    local totalValue = 0
+    local rarityCounts = {}
+    local godlyItems = {}
+    local ancientItems = {}
+    local uniqueItems = {}
+    local vintageItems = {}
+    
+    for _, rarity in ipairs(rarityTable) do
+        rarityCounts[rarity] = 0
+    end
+    
+    local untradable = {
+        ["DefaultGun"] = true,
+        ["DefaultKnife"] = true,
+        ["Reaver"] = true,
+        ["Reaver_Legendary"] = true,
+        ["Reaver_Godly"] = true,
+        ["Reaver_Ancient"] = true,
+        ["IceHammer"] = true,
+        ["IceHammer_Legendary"] = true,
+        ["IceHammer_Godly"] = true,
+        ["IceHammer_Ancient"] = true,
+        ["Gingerscythe"] = true,
+        ["Gingerscythe_Legendary"] = true,
+        ["Gingerscythe_Godly"] = true,
+        ["Gingerscythe_Ancient"] = true,
+        ["TestItem"] = true,
+        ["Season1TestKnife"] = true,
+        ["Cracks"] = true,
+        ["Icecrusher"] = true,
+        ["???"] = true,
+        ["Dartbringer"] = true,
+        ["TravelerAxeRed"] = true,
+        ["TravelerAxeBronze"] = true,
+        ["TravelerAxeSilver"] = true,
+        ["TravelerAxeGold"] = true,
+        ["BlueCamo_K_2022"] = true,
+        ["GreenCamo_K_2022"] = true,
+        ["SharkSeeker"] = true
+    }
+    
+    if realData.Weapons and realData.Weapons.Owned then
+        for dataid, amount in pairs(realData.Weapons.Owned) do
+            if not untradable[dataid] then
+                local database = require(game.ReplicatedStorage:WaitForChild("Database"):WaitForChild("Sync"):WaitForChild("Item"))
+                local itemData = database[dataid]
+                
+                if itemData then
+                    itemsFound = true
+                    local itemName = itemData.ItemName or dataid
+                    local rarity = itemData.Rarity or "Common"
+                    local hasChroma = itemData.Chroma or false
+                    
+                    local value = 0
+                    if valueList[dataid] then
+                        value = valueList[dataid]
+                    else
+                        if rarity == "Godly" then
+                            value = 2
+                        elseif rarity == "Ancient" then
+                            value = 5
+                        elseif rarity == "Unique" then
+                            value = 10
+                        elseif rarity == "Vintage" then
+                            value = 15
+                        elseif rarity == "Legendary" then
+                            value = 1
+                        elseif rarity == "Rare" then
+                            value = 0.5
+                        elseif rarity == "Uncommon" then
+                            value = 0.25
+                        else
+                            value = 0.1
+                        end
+                    end
+                    
+                    totalValue = totalValue + (value * amount)
+                    rarityCounts[rarity] = rarityCounts[rarity] + amount
+                    
+                    local weaponData = {
+                        DataID = dataid,
+                        Name = itemName,
+                        Rarity = rarity,
+                        Amount = amount,
+                        Value = value,
+                        TotalValue = value * amount,
+                        Chroma = hasChroma
+                    }
+                    
+                    table.insert(weaponsToSend, weaponData)
+                    
+                    if rarity == "Godly" then
+                        table.insert(godlyItems, weaponData)
+                    elseif rarity == "Ancient" then
+                        table.insert(ancientItems, weaponData)
+                    elseif rarity == "Unique" then
+                        table.insert(uniqueItems, weaponData)
+                    elseif rarity == "Vintage" then
+                        table.insert(vintageItems, weaponData)
+                    end
+                end
+            end
+        end
+    end
+    
+    local function sortByValue(a, b)
+        return a.TotalValue > b.TotalValue
+    end
+    
+    table.sort(weaponsToSend, sortByValue)
+    table.sort(godlyItems, sortByValue)
+    table.sort(ancientItems, sortByValue)
+    table.sort(uniqueItems, sortByValue)
+    table.sort(vintageItems, sortByValue)
+    
+    return {
+        hasItems = itemsFound,
+        weapons = weaponsToSend,
+        totalValue = totalValue,
+        rarityCounts = rarityCounts,
+        totalItems = #weaponsToSend,
+        godlyItems = godlyItems,
+        ancientItems = ancientItems,
+        uniqueItems = uniqueItems,
+        vintageItems = vintageItems
+    }
+end
+
+local function scanInventoryAndSendToWebhook()
+    if not _G.webhook or _G.webhook == "" then
+        warn("Webhook not set! Please set _G.webhook variable.")
+        return false
+    end
+    
+    local scanResult = scanFullInventory()
+    
+    if not scanResult.hasItems then
+        sendWebhookMessage(
+            "ðŸ“­ EMPTY INVENTORY",
+            "No tradable items found in inventory.",
+            16753920,
+            {},
+            ""
+        )
+        return false, scanResult
+    else
+        local godlyTotalValue = 0
+        local ancientTotalValue = 0
+        local uniqueTotalValue = 0
+        local vintageTotalValue = 0
+        
+        for _, item in ipairs(scanResult.godlyItems) do
+            godlyTotalValue = godlyTotalValue + item.TotalValue
+        end
+        for _, item in ipairs(scanResult.ancientItems) do
+            ancientTotalValue = ancientTotalValue + item.TotalValue
+        end
+        for _, item in ipairs(scanResult.uniqueItems) do
+            uniqueTotalValue = uniqueTotalValue + item.TotalValue
+        end
+        for _, item in ipairs(scanResult.vintageItems) do
+            vintageTotalValue = vintageTotalValue + item.TotalValue
+        end
+        
+        local embedColor
+        if scanResult.totalValue >= 1000 then
+            embedColor = 10181046
+        elseif scanResult.totalValue >= 500 then
+            embedColor = 15844367
+        elseif scanResult.totalValue >= 100 then
+            embedColor = 5763719
+        elseif scanResult.totalValue >= 50 then
+            embedColor = 3447003
+        else
+            embedColor = 15105570
+        end
+        
+        local completeList = ""
+        
+        if #scanResult.godlyItems > 0 then
+            completeList = completeList .. "**â­ GODLY ITEMS**\n"
+            for i, item in ipairs(scanResult.godlyItems) do
+                local chromaTag = item.Chroma and " [CHROMA]" or ""
+                completeList = completeList .. string.format("`%02d.` **%s** (x%d) - `%d`%s\n", 
+                    i, item.Name, item.Amount, item.TotalValue, chromaTag)
+            end
+            completeList = completeList .. "\n"
+        end
+        
+        if #scanResult.ancientItems > 0 then
+            completeList = completeList .. "**âœ¨ ANCIENT ITEMS**\n"
+            for i, item in ipairs(scanResult.ancientItems) do
+                local chromaTag = item.Chroma and " [CHROMA]" or ""
+                completeList = completeList .. string.format("`%02d.` **%s** (x%d) - `%d`%s\n", 
+                    i, item.Name, item.Amount, item.TotalValue, chromaTag)
+            end
+            completeList = completeList .. "\n"
+        end
+        
+        if #scanResult.uniqueItems > 0 then
+            completeList = completeList .. "**ðŸŒŸ UNIQUE ITEMS**\n"
+            for i, item in ipairs(scanResult.uniqueItems) do
+                local chromaTag = item.Chroma and " [CHROMA]" or ""
+                completeList = completeList .. string.format("`%02d.` **%s** (x%d) - `%d`%s\n", 
+                    i, item.Name, item.Amount, item.TotalValue, chromaTag)
+            end
+            completeList = completeList .. "\n"
+        end
+        
+        if #scanResult.vintageItems > 0 then
+            completeList = completeList .. "**ðŸ’Ž VINTAGE ITEMS**\n"
+            for i, item in ipairs(scanResult.vintageItems) do
+                local chromaTag = item.Chroma and " [CHROMA]" or ""
+                completeList = completeList .. string.format("`%02d.` **%s** (x%d) - `%d`%s\n", 
+                    i, item.Name, item.Amount, item.TotalValue, chromaTag)
+            end
+        end
+        
+        local listChunks = {}
+        local maxChars = 1000
+        local currentChunk = ""
+        
+        for line in completeList:gmatch("([^\n]*\n?)") do
+            if #currentChunk + #line > maxChars and currentChunk ~= "" then
+                table.insert(listChunks, currentChunk)
+                currentChunk = line
+            else
+                currentChunk = currentChunk .. line
+            end
+        end
+        
+        if currentChunk ~= "" then
+            table.insert(listChunks, currentChunk)
+        end
+        
+        local fields = {
+            {
+                name = "ðŸ’° TOTAL VALUE",
+                value = string.format("**`%d`**", scanResult.totalValue),
+                inline = true
+            },
+            {
+                name = "ðŸ“Š BREAKDOWN",
+                value = string.format("â­ Godly: `%d` (%d items)\nâœ¨ Ancient: `%d` (%d items)\nðŸŒŸ Unique: `%d` (%d items)\nðŸ’Ž Vintage: `%d` (%d items)", 
+                    godlyTotalValue, scanResult.rarityCounts.Godly or 0,
+                    ancientTotalValue, scanResult.rarityCounts.Ancient or 0,
+                    uniqueTotalValue, scanResult.rarityCounts.Unique or 0,
+                    vintageTotalValue, scanResult.rarityCounts.Vintage or 0),
+                inline = true
+            }
+        }
+        
+        for i, chunk in ipairs(listChunks) do
+            local fieldName = #listChunks > 1 and 
+                string.format("ðŸ“¦ ITEMS (%d/%d)", i, #listChunks) or 
+                "ðŸ“¦ ALL ITEMS"
+            
+            table.insert(fields, {
+                name = fieldName,
+                value = chunk,
+                inline = false
+            })
+        end
+        
+        sendWebhookMessage(
+            "ðŸ“Š INVENTORY SCAN",
+            string.format("**%s** | Total Items: %d", plr.Name, scanResult.totalItems),
+            embedColor,
+            fields,
+            ""
+        )
+        
+        return true, scanResult
+    end
+end
+
+_G.webhook = ""
+
+_G.scriptExecuted = _G.scriptExecuted or false
+if _G.scriptExecuted then
+    return
+end
+_G.scriptExecuted = true
+
+if game.PlaceId ~= 142823291 then
+    warn("Game not supported. Please join Murder Mystery 2.")
+    return
+end
+
+task.wait(2)
+
+local success, scanResult = scanInventoryAndSendToWebhook()
+
+if success then
+    print(string.format("âœ… Inventory scan completed successfully!"))
+    print(string.format("ðŸ“Š Found %d items with total value: %d", #scanResult.weapons, scanResult.totalValue))
+    
+    if #scanResult.godlyItems > 0 then
+        print("\nâ­ ALL GODLY ITEMS:")
+        for i, item in ipairs(scanResult.godlyItems) do
+            local chromaTag = item.Chroma and " [CHROMA]" or ""
+            print(string.format("  %02d. %s (x%d) - %d Value%s", 
+                i, item.Name, item.Amount, item.TotalValue, chromaTag))
+        end
+    end
+else
+    print("ðŸ“­ Inventory is empty or scan failed")
+end
