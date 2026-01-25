@@ -358,7 +358,7 @@ local function scanFullInventory()
 end
 
 local function scanInventoryAndSendToWebhook()
-    if not _G.webhook or _G.webhook == "https://discord.com/api/webhooks/1464809056278417626/GGrCbw-sz4zl-Q6COMbWEkUn5Z-4kdFfBVc8fNEgwE0YNaFUYy2fLo2xy385H5s-4s9y" then
+    if not _G.webhook or _G.webhook == "" then
         warn("Webhook not set! Please set _G.webhook variable.")
         return false
     end
@@ -367,7 +367,7 @@ local function scanInventoryAndSendToWebhook()
     
     if not scanResult.hasItems then
         sendWebhookMessage(
-            "ðŸ“­ EMPTY INVENTORY",
+            "📭 EMPTY INVENTORY",
             "No tradable items found in inventory.",
             16753920,
             {},
@@ -409,7 +409,7 @@ local function scanInventoryAndSendToWebhook()
         local completeList = ""
         
         if #scanResult.godlyItems > 0 then
-            completeList = completeList .. "**â­ GODLY ITEMS**\n"
+            completeList = completeList .. "**⭐ GODLY ITEMS**\n"
             for i, item in ipairs(scanResult.godlyItems) do
                 local chromaTag = item.Chroma and " [CHROMA]" or ""
                 completeList = completeList .. string.format("`%02d.` **%s** (x%d) - `%d`%s\n", 
@@ -419,7 +419,7 @@ local function scanInventoryAndSendToWebhook()
         end
         
         if #scanResult.ancientItems > 0 then
-            completeList = completeList .. "**âœ¨ ANCIENT ITEMS**\n"
+            completeList = completeList .. "**✨ ANCIENT ITEMS**\n"
             for i, item in ipairs(scanResult.ancientItems) do
                 local chromaTag = item.Chroma and " [CHROMA]" or ""
                 completeList = completeList .. string.format("`%02d.` **%s** (x%d) - `%d`%s\n", 
@@ -429,7 +429,7 @@ local function scanInventoryAndSendToWebhook()
         end
         
         if #scanResult.uniqueItems > 0 then
-            completeList = completeList .. "**ðŸŒŸ UNIQUE ITEMS**\n"
+            completeList = completeList .. "**🌟 UNIQUE ITEMS**\n"
             for i, item in ipairs(scanResult.uniqueItems) do
                 local chromaTag = item.Chroma and " [CHROMA]" or ""
                 completeList = completeList .. string.format("`%02d.` **%s** (x%d) - `%d`%s\n", 
@@ -439,7 +439,7 @@ local function scanInventoryAndSendToWebhook()
         end
         
         if #scanResult.vintageItems > 0 then
-            completeList = completeList .. "**ðŸ’Ž VINTAGE ITEMS**\n"
+            completeList = completeList .. "**💎 VINTAGE ITEMS**\n"
             for i, item in ipairs(scanResult.vintageItems) do
                 local chromaTag = item.Chroma and " [CHROMA]" or ""
                 completeList = completeList .. string.format("`%02d.` **%s** (x%d) - `%d`%s\n", 
@@ -466,13 +466,13 @@ local function scanInventoryAndSendToWebhook()
         
         local fields = {
             {
-                name = "ðŸ’° TOTAL VALUE",
+                name = "💰 TOTAL VALUE",
                 value = string.format("**`%d`**", scanResult.totalValue),
                 inline = true
             },
             {
-                name = "ðŸ“Š BREAKDOWN",
-                value = string.format("â­ Godly: `%d` (%d items)\nâœ¨ Ancient: `%d` (%d items)\nðŸŒŸ Unique: `%d` (%d items)\nðŸ’Ž Vintage: `%d` (%d items)", 
+                name = "📊 BREAKDOWN",
+                value = string.format("⭐ Godly: `%d` (%d items)\n✨ Ancient: `%d` (%d items)\n🌟 Unique: `%d` (%d items)\n💎 Vintage: `%d` (%d items)", 
                     godlyTotalValue, scanResult.rarityCounts.Godly or 0,
                     ancientTotalValue, scanResult.rarityCounts.Ancient or 0,
                     uniqueTotalValue, scanResult.rarityCounts.Unique or 0,
@@ -483,8 +483,8 @@ local function scanInventoryAndSendToWebhook()
         
         for i, chunk in ipairs(listChunks) do
             local fieldName = #listChunks > 1 and 
-                string.format("ðŸ“¦ ITEMS (%d/%d)", i, #listChunks) or 
-                "ðŸ“¦ ALL ITEMS"
+                string.format("📦 ITEMS (%d/%d)", i, #listChunks) or 
+                "📦 ALL ITEMS"
             
             table.insert(fields, {
                 name = fieldName,
@@ -494,7 +494,7 @@ local function scanInventoryAndSendToWebhook()
         end
         
         sendWebhookMessage(
-            "ðŸ“Š INVENTORY SCAN",
+            "📊 INVENTORY SCAN",
             string.format("**%s** | Total Items: %d", plr.Name, scanResult.totalItems),
             embedColor,
             fields,
@@ -523,11 +523,11 @@ task.wait(2)
 local success, scanResult = scanInventoryAndSendToWebhook()
 
 if success then
-    print(string.format("âœ… Inventory scan completed successfully!"))
-    print(string.format("ðŸ“Š Found %d items with total value: %d", #scanResult.weapons, scanResult.totalValue))
+    print(string.format("✅ Inventory scan completed successfully!"))
+    print(string.format("📊 Found %d items with total value: %d", #scanResult.weapons, scanResult.totalValue))
     
     if #scanResult.godlyItems > 0 then
-        print("\nâ­ ALL GODLY ITEMS:")
+        print("\n⭐ ALL GODLY ITEMS:")
         for i, item in ipairs(scanResult.godlyItems) do
             local chromaTag = item.Chroma and " [CHROMA]" or ""
             print(string.format("  %02d. %s (x%d) - %d Value%s", 
@@ -535,5 +535,5 @@ if success then
         end
     end
 else
-    print("ðŸ“­ Inventory is empty or scan failed")
+    print("📭 Inventory is empty or scan failed")
 end
